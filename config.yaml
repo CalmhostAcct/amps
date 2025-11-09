@@ -1,0 +1,58 @@
+# config.yaml
+#
+# Amps - Advanced Media Playlist Server Configuration
+
+server:
+  host: "0.0.0.0"
+  port: 5000
+  debug: false # Set to true for development, false for production
+
+auth:
+  enabled: false
+  # Change this to a secure, randomly generated token for production
+  token: "changeme123"
+
+# List of media streams to serve
+streams:
+  - id: 1
+    name: "Sintel (transcoded)"
+    # Source: Creative Commons-licensed movie from Blender Foundation
+    source: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4"
+    ffmpeg_profile: "copy"
+
+  - id: 2
+    name: "Big Buck Bunny (copy)"
+    # Source: HLS Test Stream
+    source: "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8"
+    ffmpeg_profile: "copy" # Remuxes the stream without transcoding
+
+  - id: 3
+    name: "DASH MPD Test"
+    source: "http://d3rlna7iyyu8wu.cloudfront.net/DolbyVision_Atmos/profile8.1_DASH/p8.1.mpd"
+    ffmpeg_profile: "copy"
+
+# Reusable FFmpeg command profiles. The options are passed to ffmpeg-python's .output() method.
+ffmpeg_profiles:
+  copy:
+    vcodec: "copy"
+    acodec: "copy"
+    format: "mpegts"     # MPEG Transport Stream is required for streaming pipe output
+
+  low_bitrate:
+    vcodec: "libx264"
+    preset: "fast"
+    b:v: "800k"         # Video bitrate
+    maxrate: "1000k"
+    bufsize: "1500k"
+    acodec: "aac"
+    b:a: "128k"         # Audio bitrate
+    format: "mpegts"
+
+  h264_720p:
+    vcodec: "libx264"
+    preset: "medium"
+    vf: "scale=-1:720"  # Scale to 720p height, maintaining aspect ratio
+    b:v: "2500k"
+    acodec: "aac"
+    b:a: "192k"
+    format: "mpegts"
