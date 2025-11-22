@@ -55,6 +55,9 @@
     a {
         color: #1155ccff;
     }
+.white-svg {
+    filter: brightness(0) invert(1);
+}
 </style>
 
 <link href="https://fonts.googleapis.com/css2?family=Rubik:wght@300;400;600&display=swap" rel="stylesheet">
@@ -63,7 +66,9 @@
 <body>
 
 <header>
-    <img src="assets/logo.svg" style="color: white" alt="Amps Logo">
+    <img src="assets/logo.svg" class="white-svg" height="50" alt="Amps Logo">
+
+
     <h1>Amps</h1>
     <p>Dynamic M3U generator, stream relay/transcoder, and lightweight media server.</p>
 </header>
