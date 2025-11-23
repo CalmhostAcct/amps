@@ -6,7 +6,7 @@
 </div>
 <hr>
 
-[Visit the project website](https://calmhostacct.github.io/amps)
+[Visit the project website](https://librenetworks.org/amps)
 
 **Amps** is a Flask-based server that dynamically generates and serves `.m3u` playlists, relays or transcodes media streams using **FFmpeg**, and allows for easy configuration through a `config.yaml` file.
 
