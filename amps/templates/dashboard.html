@@ -11,20 +11,42 @@
     crossorigin="anonymous"
   >
   <style>
-    body { background: #0f172a; color: #e2e8f0; }
+    body { background: #0f172a; color: #ffffff !important; }
+
+    /* FORCE EVERYTHING TO WHITE */
+    * { color: #ffffff !important; }
+
+    /* Keep backgrounds dark but text white */
     .card { background: #111827; border-color: #1f2937; }
     .table thead th { border-color: #1f2937; }
     .table tbody td { border-color: #1f2937; }
-    .form-control, .form-select, .form-check-input { background: #0b1120; border-color: #1f2937; color: #e2e8f0; }
-    .form-control:focus, .form-select:focus { border-color: #38bdf8; box-shadow: 0 0 0 0.2rem rgba(56, 189, 248, 0.25); }
+
+    .form-control,
+    .form-select,
+    .form-check-input {
+      background: #0b1120;
+      border-color: #1f2937;
+      color: #ffffff !important;
+    }
+
+    .form-control:focus,
+    .form-select:focus {
+      border-color: #38bdf8;
+      box-shadow: 0 0 0 0.2rem rgba(56, 189, 248, 0.25);
+      color: #ffffff !important;
+    }
+
     .navbar { background: #0b1120; }
-    .badge-soft { background: rgba(56, 189, 248, 0.15); color: #38bdf8; }
-    a { color: #38bdf8; }
-    a:hover { color: #7dd3fc; }
-    textarea { min-height: 120px; }
+    .badge-soft { background: rgba(56, 189, 248, 0.15); color: #ffffff !important; }
+
+    a { color: #ffffff !important; }
+    a:hover { color: #e0e0e0 !important; }
+
+    textarea { min-height: 120px; color: #ffffff !important; }
   </style>
 </head>
 <body>
+
 <nav class="navbar navbar-expand-lg navbar-dark mb-4">
   <div class="container-fluid">
     <span class="navbar-brand fw-semibold">⚡ Amps Dashboard</span>
