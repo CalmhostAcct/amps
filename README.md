@@ -19,6 +19,7 @@ It's designed to be a developer-friendly, modular, and robust solution for perso
 - **Dynamic M3U Playlists:** Serves a `/playlist.m3u` file compatible with most media players (VLC, Kodi, etc.) complete with channel names, logos, and custom metadata.
 - **FFmpeg Engine:** Relays streams (`copy` codec) or transcodes them on-the-fly to different bitrates, resolutions, or formats.
 - **Multi-Protocol Outputs:** Generate HLS (and LL-HLS), MPEG-DASH, RTSP, or raw TS outputs from the same FFmpeg process.
+- **Browser-Friendly Delivery:** Stream over WebSockets or serve fragmented MP4 suitable for Media Source Extensions (MSE).
 - **Static Manifests:** HLS playlists and DASH manifests are written to a temp media directory and served via `/hls/<id>/index.m3u8` and `/dash/<id>/manifest.mpd`.
 - **yt-dlp Integration:** Resolve complex streaming services (YouTube, Twitch, etc.) into direct FFmpeg inputs on demand.
 - **YAML Configuration:** All streams and FFmpeg profiles are defined in a simple, human-readable `config.yaml`.
@@ -158,6 +159,15 @@ When a stream uses an HLS or DASH output profile, manifests and media segments a
 - `http://<server_ip>:5000/dash/<id>/manifest.mpd`
 
 The base temp directory can be overridden via `media_root` in `config.yaml`. Each stream/variant gets its own subfolder, allowing multiple clients to reuse the same FFmpeg process.
+
+### WebSockets and MSE playback
+
+For browser-first players you can request a WebSocket transport instead of raw HTTP:
+
+- `ws://<server_ip>:5000/ws/<id>?token=<token>`
+- Optional `variant` query strings are respected just like `/stream/<id>`.
+
+If your FFmpeg profile sets `output_format: mse`, Amps will emit fragmented MP4 with `movflags=frag_keyframe+empty_moov+default_base_moof`, which drops cleanly into Media Source Extensions pipelines.
 
 ### Audio-Only Output
 
