@@ -19,6 +19,8 @@ from flask import (
     send_from_directory,
     url_for,
 )
+from flask_sock import Sock
+from werkzeug.exceptions import HTTPException
 
 from amps import ffmpeg_utils
 from amps.api import api_bp
@@ -87,6 +89,7 @@ def create_app(config: dict) -> Flask:
     app.config.setdefault('stream_map', {})
     app.config.setdefault('scheduled_streams', [])
     app.config.setdefault('media_root', str(ffmpeg_utils.OUTPUT_BASE))
+    sock = Sock(app)
 
     # Register API blueprint
     app.register_blueprint(api_bp)
@@ -220,6 +223,75 @@ def create_app(config: dict) -> Flask:
 
     setup_scheduled_streams()
 
+    def _stream_mimetype(output_format: str) -> str:
+        mapping = {
+            'audio': 'audio/aac',
+            'dash': 'application/dash+xml',
+            'hls': 'application/vnd.apple.mpegurl',
+            'll-hls': 'application/vnd.apple.mpegurl',
+            'mse': 'video/mp4',
+            'ts': 'video/mp2t',
+            'websocket': 'application/octet-stream',
+        }
+        return mapping.get(output_format, 'application/octet-stream')
+
+    def _enforce_token():
+        if not app.config['auth']['enabled']:
+            return
+
+        token = request.headers.get('X-Amps-Token') or request.args.get('token')
+        if not token or token != app.config['auth']['token']:
+            abort(401, description="Unauthorized: Valid token required.")
+
+    def _prepare_stream_context(stream_id: int, variant_name: Optional[str] = None):
+        stream_map = app.config.get('stream_map', {})
+        stream_config = stream_map.get(stream_id)
+
+        if not stream_config:
+            abort(404, description=f"Stream with ID {stream_id} not found.")
+
+        region = extract_region_from_request(request)
+        if not is_stream_allowed_for_region(stream_config, region):
+            abort(403, description=f"Stream {stream_id} is not available in your region.")
+
+        variant_config = None
+        selected_stream_config = stream_config
+
+        if variant_name:
+            for candidate in stream_config.get('adaptive_bitrates') or []:
+                if candidate.get('name') == variant_name:
+                    variant_config = candidate
+                    break
+
+            if not variant_config:
+                abort(404, description=f"Variant '{variant_name}' not found for stream {stream_id}.")
+
+            selected_stream_config = copy.deepcopy(stream_config)
+            for field in ['ffmpeg_profile', 'custom_ffmpeg', 'source', 'input_options', 'input_args', 'source_handler', 'use_yt_dlp', 'yt_dlp_format']:
+                if field in variant_config:
+                    selected_stream_config[field] = variant_config[field]
+
+        custom_ffmpeg = selected_stream_config.get('custom_ffmpeg')
+        ffmpeg_profile_name = selected_stream_config.get('ffmpeg_profile')
+
+        if custom_ffmpeg:
+            ffmpeg_profile = app.config['ffmpeg_profiles'].get(ffmpeg_profile_name, {}) if ffmpeg_profile_name else {}
+        else:
+            if not ffmpeg_profile_name:
+                abort(500, description=f"Stream {stream_id} is missing an ffmpeg_profile configuration.")
+            ffmpeg_profile = app.config['ffmpeg_profiles'].get(ffmpeg_profile_name)
+            if not ffmpeg_profile:
+                abort(500, description=f"FFmpeg profile '{ffmpeg_profile_name}' not found for stream {stream_id}.")
+
+        output_format = (ffmpeg_profile or {}).get('output_format', 'ts')
+        process_variant = variant_name if variant_config else None
+        process = ffmpeg_utils.get_or_start_stream_process(selected_stream_config, ffmpeg_profile or {}, process_variant=process_variant)
+
+        if not process:
+            abort(500, description=f"Failed to start FFmpeg for stream {stream_id}.")
+
+        return process, output_format
+
     def build_stream_url(stream_id: int, extra_params: Optional[dict] = None) -> str:
         """Constructs an absolute streaming URL with auth and optional query args."""
 
@@ -285,10 +357,7 @@ def create_app(config: dict) -> Flask:
         if request.path == '/metrics' or not app.config['auth']['enabled']:
             return  # Skip auth for metrics or if auth is disabled
 
-        token = request.headers.get('X-Amps-Token') or request.args.get('token')
-        if not token or token != app.config['auth']['token']:
-            logging.warning(f"Unauthorized access attempt from {request.remote_addr}")
-            abort(401, description="Unauthorized: Valid token required.")
+        _enforce_token()
 
     @app.route('/playlist.m3u')
     def generate_playlist():
@@ -386,51 +455,8 @@ def create_app(config: dict) -> Flask:
     @app.route('/stream/<int:stream_id>')
     def stream_media(stream_id):
         """Looks up a stream, runs FFmpeg, and pipes the output."""
-        stream_map = app.config.get('stream_map', {})
-        stream_config = stream_map.get(stream_id)
-
-        if not stream_config:
-            abort(404, description=f"Stream with ID {stream_id} not found.")
-
-        region = extract_region_from_request(request)
-        if not is_stream_allowed_for_region(stream_config, region):
-            abort(403, description=f"Stream {stream_id} is not available in your region.")
-
         variant_name = request.args.get('variant')
-        variant_config = None
-        selected_stream_config = stream_config
-
-        if variant_name:
-            for candidate in stream_config.get('adaptive_bitrates') or []:
-                if candidate.get('name') == variant_name:
-                    variant_config = candidate
-                    break
-
-            if not variant_config:
-                abort(404, description=f"Variant '{variant_name}' not found for stream {stream_id}.")
-
-            selected_stream_config = copy.deepcopy(stream_config)
-            for field in ['ffmpeg_profile', 'custom_ffmpeg', 'source', 'input_options', 'input_args', 'source_handler', 'use_yt_dlp', 'yt_dlp_format']:
-                if field in variant_config:
-                    selected_stream_config[field] = variant_config[field]
-
-        custom_ffmpeg = selected_stream_config.get('custom_ffmpeg')
-        ffmpeg_profile_name = selected_stream_config.get('ffmpeg_profile')
-
-        if custom_ffmpeg:
-            ffmpeg_profile = app.config['ffmpeg_profiles'].get(ffmpeg_profile_name, {}) if ffmpeg_profile_name else {}
-        else:
-            if not ffmpeg_profile_name:
-                abort(500, description=f"Stream {stream_id} is missing an ffmpeg_profile configuration.")
-            ffmpeg_profile = app.config['ffmpeg_profiles'].get(ffmpeg_profile_name)
-            if not ffmpeg_profile:
-                abort(500, description=f"FFmpeg profile '{ffmpeg_profile_name}' not found for stream {stream_id}.")
-
-        process_variant = variant_name if variant_config else None
-        process = ffmpeg_utils.get_or_start_stream_process(selected_stream_config, ffmpeg_profile, process_variant=process_variant)
-
-        if not process:
-            abort(500, description=f"Failed to start FFmpeg for stream {stream_id}.")
+        process, output_format = _prepare_stream_context(stream_id, variant_name)
 
         def generate_chunks():
             try:
@@ -448,8 +474,32 @@ def create_app(config: dict) -> Flask:
                 # Note: We don't kill the process here, as other clients might be connected.
                 # The process will be restarted on next request if it dies.
 
-        # MPEG-TS is the transport stream format specified in ffmpeg_profiles
-        return Response(generate_chunks(), mimetype='video/mp2t')
+        # Use a transport-aligned mimetype so clients can attach the correct demuxer
+        return Response(generate_chunks(), mimetype=_stream_mimetype(output_format))
+
+    @sock.route('/ws/<int:stream_id>')
+    def stream_websocket(ws, stream_id):
+        """Streams media over a WebSocket connection for browser-based players."""
+
+        try:
+            _enforce_token()
+            variant_name = request.args.get('variant')
+            process, _ = _prepare_stream_context(stream_id, variant_name)
+        except HTTPException as exc:
+            ws.send(exc.description or str(exc))
+            ws.close(code=getattr(exc, 'code', 1011) or 1011)
+            return
+
+        try:
+            while True:
+                chunk = process.stdout.read(4096)
+                if not chunk:
+                    break
+                ws.send(chunk, binary=True)
+        except Exception as exc:  # pragma: no cover - WebSocket errors are environment-specific
+            logging.error("WebSocket streaming error for %s: %s", stream_id, exc)
+        finally:
+            ws.close()
 
     @app.route('/hls/<int:stream_id>/<path:filename>')
     def hls_manifest(stream_id, filename):
